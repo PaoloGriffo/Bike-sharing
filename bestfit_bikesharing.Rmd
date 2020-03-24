@@ -1,0 +1,1999 @@
+---
+title: "bestfit_bikesharing"
+author: "Paolo Francesco Griffo"
+date: "8 Novembre 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+load("C:/Users/griff/Desktop/load_dati.RData")
+
+```
+
+# Funzioni e comandi 
+
+```{r fun}
+# combinazioni di insiemi di variabili 
+
+library(utils)
+my.comb=function(e){
+  
+  insiemi<-list()
+  ss<-0
+  
+  for(j in 1:e){
+    #print(paste("combinazione senza ripetizione di ",j , " elementi: " ,sep=""))
+    
+    mat<- combn(e,j)
+    nc<-NCOL(mat)
+    #print(mat)
+    
+    for (l in 1:NCOL(mat)){
+      ss<-ss+1
+      insiemi[[ss]]<-mat[,l]
+      #print(insiemi[[ss]])
+    }
+    
+  }
+  return(insiemi)
+  
+}
+
+#----------------------------------------------------
+# selezione del modello migliore
+# dati originali
+
+bestBic = function(xx,y,nsub){
+  
+  #nvar<-ncol(xx)
+  #nsub<-my.comb(nvar)
+  
+  listamod<-list()
+  vettbic<-c()
+  
+  pval = list()
+  sig<-rep(0,length(nsub))
+  
+  jb.test<-list()
+  #sh.test<-list()
+  resig<-rep(0,length(nsub))  
+  
+  
+  for (j in 1:length(nsub)){
+  
+    cov<-nsub[[j]]           
+    matcov<-xx[, cov]
+    #colnames(matcov)<-colnames(xx)[cov]
+    
+    fit<-lm(y~., data = subset(xx, select= cov ))      
+    
+    listamod[[j]]<-fit
+    pval[[j]]<-coef(summary(fit))[-1,4]
+    
+    sig[j]<-ifelse(all(pval[[j]]<0.05),1,0)
+    vettbic[j]<-BIC(fit)
+    #plot(density(rstandard(fit)))
+    vettres<-rstandard(fit)
+
+  
+    
+    jb.test[[j]]<-jarque.bera.test((rstandard(fit)))
+    resig[j]<-ifelse(jb.test[[j]]$p.value < 0.05,1,0)
+    
+    #sh.test[[j]] <- shapiro.test((rstandard(fit)))
+    #resig[j]<-ifelse(sh.test[[j]]$p.value < 0.05,1,0)
+    
+  }
+  
+  vettsig<-which(sig==1 & resig==0) 
+  #vettsig<-which(sig==1 ) 
+  BICsig<-vettbic[vettsig]
+  bestBIC<-BICsig[which.min(BICsig)]
+  posbic<-match(bestBIC,vettbic) 
+  
+  return(list('pos.best'=posbic,'modelli'=listamod,'vettbic'=vettbic,'sig'=sig,'resig'= resig, 'jb.test'=jb.test, 'vettsig'=vettsig))
+}
+
+
+#---------------------------------------------
+# ricampionamento dati 
+
+bootstrap <- function(xx,seed,y){
+  
+  xx <- cbind(y,xx)
+  n <- nrow(xx)
+  k <- ncol(xx)
+  
+  #XX = matrix(nrow = n,ncol = k)
+  
+  set.seed(seed)
+  index <- sample(1:n,n,replace = TRUE)
+  
+  XX<-as.data.frame(xx[index,])
+  colnames(XX) <- colnames(xx)
+  return(XX)
+}
+#---------------------------------------------
+bestBBoot <- function(xx,seed,y,nsub){
+  
+  XX <- bootstrap(xx,seed,y)
+  Y <- XX[,1]
+  XX <- XX[,-1]
+  
+  bestBic(XX,Y,nsub)$pos.best
+  
+}
+# ---------------------------------------------
+
+modelselection <- function(xx,N,y){
+  
+  a = 1
+  pos = rep(0,N)
+  
+  while(a <= N){
+    
+    seed = a
+    pos[a] = bestBBoot(xx,seed,y,nsub) 
+    
+    a = a +1 
+    
+  }
+  
+  return(pos)
+  
+}
+
+```
+
+## Filtri e codifica variabili
+
+```{r dati}
+
+head(dati)
+# la prima osservazione corrisponde al 2011-01-01
+# 1 gennaio 2011 - sabato 
+
+# la variabile weekday codifica da 0 a 6 i giorni 
+# 6 - Sabato ; 0 - Domenica 
+
+# filtro per weekday = 0 & weekday = 6
+sett <- dati[dati$weekday==0 | dati$weekday==6,]
+
+## Codifica variabili dicotomiche
+
+# dicotomizzo weathersit 
+weathersit<-as.factor(ifelse(sett$weathersit == 1,1,0))
+
+# dicotomizzo season
+spring = factor(ifelse(sett$season == 1, 1,0))
+summer = factor(ifelse(sett$season == 2, 1,0))
+fall = factor(ifelse(sett$season == 3, 1,0))
+
+s1<-factor(ifelse(sett$season<=2,1,0))
+s2<-factor(ifelse(sett$season>=3,1,0))
+#---------------------------------------------
+reg<-factor(ifelse(sett$registered>=mean(sett$registered),1,0))
+
+# elimino le variabili dicotomizzate
+xx = sett[,-c(1:10,14:16)]
+
+xx = as.data.frame(cbind(xx,weathersit,s1,reg))
+
+head(xx)
+
+str(xx)
+```
+
+## Trasformazione logaritmica della variabile risposta
+
+```{r}
+y <- sqrt(sett$cnt - sett$registered)
+
+plot(density(y))
+```
+
+
+## Stima dei modelli
+
+```{r}
+library(car)
+library(tseries)
+
+nsub<-my.comb(ncol(xx))
+#---------------------------------------------
+# prova bestfit con y = utenti casuali
+
+bestfit<-bestBic(xx,y,nsub)
+
+summary(bestfit$modelli[[bestfit$pos.best]])
+
+vif(bestfit$modelli[[bestfit$pos.best]])
+
+```
+
+## Ricampionamento
+
+```{r}
+nboot<-500
+
+best50boot<-modelselection(xx,nboot,y)
+
+fr<-table(best50boot); fr
+```
+
+## Delta Bic
+
+```{r}
+#---------------------------------------------
+### calcolo deltabic 
+best<- bestfit$vettbic[bestfit$pos.best] # Bic del modello migliore con dati  
+deltabic<- bestfit$vettbic - best # Bic modelli - BIC modello migliore 
+
+gruppo<-which(deltabic<5) # differenze in BIC minori di 5  
+gruppo2<-which(deltabic<2)
+
+qualisig<-which(bestfit$sig==1 & bestfit$resig==0) # posizioni dei modelli con tutte variabili significative 
+
+quali<-intersect(gruppo,qualisig)# cluster modelli con dbic < 5 - dati originali 
+quali2<-intersect(gruppo2,qualisig)
+
+qualialtri<-quali[quali!=bestfit$pos.best]
+qualialtri2<-quali[quali2!=bestfit$pos.best]
+
+### 
+nomi<-as.numeric(names(table(best50boot))) # modelli migliori - dati boot
+
+qualiquali<-intersect(quali,nomi)
+qualiqualialtri<-intersect(qualialtri,nomi)
+qualiquali2<-intersect(qualialtri2,nomi)
+
+posizioni<-match(qualiquali,names(fr))
+posizionialtri<-match(qualiqualialtri,names(fr)); posizionialtri
+posizioni2<-match(qualiquali2,names(fr)); posizioni2
+
+risultati<-matrix(as.numeric(fr)[posizioni],ncol=1)
+risultatialtri<-matrix(as.numeric(fr)[posizionialtri],ncol=1)
+risultati2<-matrix(as.numeric(fr)[posizioni2],ncol=1)
+
+rownames(risultati)<-names(table(best50boot))[posizioni]
+rownames(risultatialtri)<-names(table(best50boot))[posizionialtri]
+rownames(risultati2)<-names(table(best50boot)[posizioni2])
+
+successotot<-sum(risultati)/nboot;
+successoaltri<-sum(risultatialtri)/nboot;
+successoaltri2<-sum(risultati2)/nboot;
+successobest<-successotot-successoaltri;
+
+cat("tot","altri","altri2","best", "\n",successotot,successoaltri,successoaltri2,
+    successobest)
+
+
+for(i in 1:length(qualiqualialtri)){
+
+cat("*************************","\n",
+    "MODELLO CON DELTABIC < 5","\n",
+    "NUMERO MODELLO:",qualiqualialtri[i],
+    "\n","*************************",sep="")
+
+print(summary(bestfit$modelli[[qualiqualialtri[i]]]))
+}
+
+
+for(i in 1:length(qualiquali2)){
+
+cat("*************************","\n",
+    "MODELLO CON DELTABIC < 2","\n",
+    "NUMERO MODELLO:",qualiquali2[i],
+    "\n","*************************",sep="")
+
+print(summary(bestfit$modelli[[qualiquali2[i]]]))
+}
+
+```
+
+## Analisi dei residui
+
+```{r}
+jarque.bera.test(rstandard(bestfit$modelli[[bestfit$pos.best]]))
+
+plot(density(rstandard(bestfit$modelli[[bestfit$pos.best]])))
+
+plot(rstandard(bestfit$modelli[[bestfit$pos.best]]))
+
+plot(bestfit$modelli[[bestfit$pos.best]])
+
+plot(bestfit$modelli[[bestfit$pos.best]], which = 6)
+plot(bestfit$modelli[[bestfit$pos.best]], which = 4)
+
+influenceIndexPlot(bestfit$modelli[[bestfit$pos.best]])
+
+influencePlot(bestfit$modelli[[bestfit$pos.best]])
+```
+
+## Filtro per Anno (2011 e 2012)
+
+```{r}
+sett$dteday<-as.numeric(sett$dteday)
+
+D1<-sett[sett$dteday <= 365,]
+D2<-sett[sett$dteday > 365,]
+  
+```
+
+
+# Dati ridotti (Weekend 2011)
+
+```{r}
+weathersitd1<-as.factor(ifelse(D1$weathersit == 1,1,0))
+
+seasond1<-factor(ifelse(D1$season<=2,1,0))
+
+regd<-factor(ifelse(D1$registered>=mean(D1$registered),1,0))
+
+XX1 = D1[,-c(1:10,14:16)]
+
+XX1 = as.data.frame(cbind(XX1,weathersitd1,seasond1,regd))
+
+head(XX1)
+
+str(XX1)
+```
+
+## Trasformazione log
+
+```{r}
+yD <- sqrt(D1$cnt - D1$registered)
+
+plot(density(yD))
+
+jarque.bera.test(yD)
+```
+
+## Stime dei modelli 
+
+```{r}
+nsubD<-my.comb(ncol(XX1))
+
+bestfitD1<-bestBic(XX1,yD,nsubD)
+
+summary(bestfitD1$modelli[[bestfitD1$pos.best]])
+
+vif(bestfitD1$modelli[[bestfitD1$pos.best]])
+
+bestfitD1$jb.test[[bestfitD1$pos.best]]
+
+nboot<-500
+
+best50bootD1<-modelselection(XX1,nboot,yD)
+
+frD1<-table(best50bootD1); frD1
+```
+
+## Delta BIC 
+
+```{r}
+### calcolo deltabic 
+bestD1<- bestfitD1$vettbic[bestfitD1$pos.best] # Bic del modello migliore D1 
+deltabicD1<- bestfitD1$vettbic - bestD1 # Bic modelli - BIC modello migliore 
+
+gruppoD1<- which(deltabicD1<5) # differenze in BIC minori di 5  
+gruppo2D1<-which(deltabicD1<2) # differenze in BIC minori di 2
+
+qualisigD1<-which(bestfitD1$sig==1 & bestfitD1$resig==0) # posizioni dei modelli con tutte variabili significative 
+
+qualiD1<-intersect(gruppoD1,qualisigD1)# cluster modelli con dbic < 5  
+quali2D1<-intersect(gruppo2D1,qualisigD1) # cluster modelli con dbic < 2 
+
+##
+qualialtriD1<-qualiD1[qualiD1!=bestfitD1$pos.best] # modelli con dbic <5 diversi da bestd1
+quali2altriD1<-quali2D1[quali2D1!=bestfitD1$pos.best] # modelli dbic < 2 diversi da bestd1
+##
+
+nomiD1<-as.numeric(names(table(best50bootD1))) # modelli migliori - dati boot
+
+qualiqualiD1<-intersect(qualiD1,nomiD1) # insieme modelli dbic<5, nomi modelli boot
+quali2qualiD1<-intersect(quali2altriD1,nomiD1) # insieme modelli dbic <2, diversi da bestd1
+qualiqualialtriD1<-intersect(qualialtriD1,nomiD1) # insieme modelli dbic<5 diversi da bestd1, nomi modelli boot
+
+posizioniD1<-match(qualiqualiD1,names(frD1)) # posizioni modelli dbic<5
+posizioni2altriD1<-match(quali2qualiD1,names(frD1)) # posizioni modelli dbic<2, diversi da bestd1, nomi modelli
+posizionialtriD1<-match(qualiqualialtriD1,names(frD1))# posizioni modelli dbic<5, diversi da best1, nomi modelli
+
+risultatiD1<-matrix(as.numeric(frD1)[posizioniD1],ncol=1) # risultati modelli dbic<5
+risultati2altriD1<-matrix(as.numeric(frD1)[posizioni2altriD1],ncol=1)#risultati modelli dbic<2, diversi da bestd1
+risultatialtriD1<-matrix(as.numeric(frD1)[posizionialtriD1],ncol=1)#risultati modelli dbic<5, diversi da bestd1
+
+rownames(risultatiD1)<-names(table(best50bootD1))[posizioniD1]
+rownames(risultati2altriD1)<-names(table(best50bootD1))[posizioni2altriD1]
+rownames(risultatialtriD1)<-names(table(best50bootD1))[posizionialtriD1]
+
+successototD1<-sum(risultatiD1)/nboot;
+
+successo2altriD1<-sum(risultati2altriD1)/nboot; # % modelli dbic <2 diversi da bestd1
+
+successoaltriD1<-sum(risultatialtriD1)/nboot; # % modelli dbic <5 diversi da bestd1
+
+successobestD1<-successototD1-successoaltriD1;
+
+cat("totD1","altriD1","altri2D1","bestD1", "\n",successototD1,successoaltriD1,successo2altriD1,successobestD1)
+
+
+for(i in 1:length(qualiqualialtriD1)){
+
+cat("*************************","\n",
+    "MODELLO CON DELTABIC < 5","\n",
+    "MODELLO NUMERO:",qualiqualialtriD1[i],
+    "\n","*************************",sep="")
+
+print(summary(bestfitD1$modelli[[qualiqualialtriD1[i]]]))
+}
+
+
+for(i in 1:length(quali2qualiD1)){
+
+cat("*************************","\n",
+    "MODELLO CON DELTABIC < 2","\n",
+    "MODELLO NUMERO:",quali2qualiD1[i],
+    "\n","*************************",sep="")
+
+print(summary(bestfitD1$modelli[[quali2qualiD1[i]]]))
+}
+
+```
+
+## Analisi dei residui 
+
+```{r}
+jarque.bera.test(rstandard(bestfitD1$modelli[[bestfitD1$pos.best]]))
+
+plot(density(rstandard(bestfitD1$modelli[[bestfitD1$pos.best]])))
+
+plot(rstandard(bestfitD1$modelli[[bestfitD1$pos.best]]))
+
+plot(bestfitD1$modelli[[bestfitD1$pos.best]])
+
+plot(bestfitD1$modelli[[bestfitD1$pos.best]], which = 6)
+plot(bestfitD1$modelli[[bestfitD1$pos.best]], which = 4)
+
+influenceIndexPlot(bestfitD1$modelli[[bestfitD1$pos.best]])
+
+influencePlot(bestfitD1$modelli[[bestfitD1$pos.best]])
+```
+
+# Dati ridotti (Weekend 2012)
+
+```{r}
+
+weathersitd2<-as.factor(ifelse(D2$weathersit == 1,1,0))
+
+seasondd1<-factor(ifelse(D2$season<=2,1,0))
+
+regdd<-factor(ifelse(D2$registered>=mean(D2$registered),1,0))
+
+XX2 = D2[,-c(1:10,14:16)]
+
+XX2 = as.data.frame(cbind(XX2,weathersitd2,seasondd1,regdd))
+
+head(XX2)
+
+str(XX2)
+```
+
+
+#Trasformazione log
+
+```{r}
+
+yDD <- sqrt(D2$cnt - D2$registered)
+
+plot(density(yDD))
+
+jarque.bera.test(yDD)
+
+```
+
+## Stima dei modelli 
+
+```{r}
+
+nsubDD<-my.comb(ncol(XX2))
+
+bestfitD2<-bestBic(XX2,yDD,nsubDD)
+
+summary(bestfitD2$modelli[[bestfitD2$pos.best]])
+
+vif(bestfitD2$modelli[[bestfitD2$pos.best]])
+
+bestfitD2$jb.test[[bestfitD2$pos.best]]
+
+nboot<-500
+
+best50bootD2<-modelselection(XX2,nboot,yDD)
+
+frD2<-table(best50bootD2); frD2
+```
+
+# Delta BIC
+
+```{r}
+
+bestD2<- bestfitD2$vettbic[bestfitD2$pos.best] # Bic del modello migliore D2 
+deltabicD2<- bestfitD2$vettbic - bestD2 # Bic modelli - BIC modello migliore 
+
+gruppoD2<- which(deltabicD2<5) # differenze in BIC minori di 5  
+gruppo2D2<-which(deltabicD2<2) # differenze in BIC minori di 2
+
+qualisigD2<-which(bestfitD2$sig==1 & bestfitD2$resig==0) # posizioni dei modelli con tutte variabili significative 
+
+qualiD2<-intersect(gruppoD2,qualisigD2)#cluster modelli con dbic < 5 - dati originali 
+quali2D2<-intersect(gruppo2D2,qualisigD2)#cluster modelli con dbic <2  dati originali
+
+###
+qualialtriD2<-qualiD2[qualiD2!=bestfitD2$pos.best]
+quali2altriD2<-quali2D2[quali2D2!=bestfitD2$pos.best] # modelli dbic < 2 diversi da bestd2
+###
+
+nomiD2<-as.numeric(names(table(best50bootD2))) # modelli migliori - dati boot
+
+qualiqualiD2<-intersect(qualiD2,nomiD2)
+qualiqualialtriD2<-intersect(qualialtriD2,nomiD2)
+quali2qualiD2<-intersect(quali2altriD2,nomiD2) # insieme modelli dbic <2, diversi da bestd2
+
+
+posizioniD2<-match(qualiqualiD2,names(frD2))
+posizioni2altriD2<-match(quali2qualiD2,names(frD2)) # posizioni modelli dbic<2, diversi da bestd2, nomi modelli
+posizionialtriD2<-match(qualiqualialtriD2,names(frD2))
+
+risultatiD2<-matrix(as.numeric(frD2)[posizioniD2],ncol=1)
+risultati2altriD2<-matrix(as.numeric(frD2)[posizioni2altriD2],ncol=1)#risultati modelli dbic<2, diversi da bestd2
+risultatialtriD2<-matrix(as.numeric(frD2)[posizionialtriD2],ncol=1)
+
+rownames(risultatiD2)<-names(table(best50bootD2))[posizioniD2]
+rownames(risultati2altriD2)<-names(table(best50bootD2))[posizioni2altriD2]
+rownames(risultatialtriD2)<-names(table(best50bootD2))[posizionialtriD2]
+
+successototD2<-sum(risultatiD2)/nboot;
+
+successoaltriD2<-sum(risultatialtriD2)/nboot;
+
+successo2altriD2<-sum(risultati2altriD2)/nboot; # % successo modelli dbic <2 diversi da bestd2
+
+successobestD2<-successototD2-successoaltriD2;
+
+cat("totD2","altriD2","altri2D2","bestD2", "\n",successototD2,successoaltriD2,successo2altriD2,successobestD2)
+
+
+for(i in 1:length(qualiqualialtriD2)){
+  
+  cat("*************************","\n",
+      "MODELLO CON DELTABIC < 5","\n",
+      "MODELLO NUMERO:",qualiqualialtriD2[i],
+      "\n","*************************",sep="")
+  
+  print(summary(bestfitD2$modelli[[qualiqualialtriD2[i]]]))
+}
+
+
+for(i in 1:length(quali2qualiD2)){
+  
+  cat("*************************","\n",
+      "MODELLO CON DELTABIC < 2","\n",
+      "MODELLO NUMERO:",quali2qualiD2[i],
+      "\n","*************************",sep="")
+  
+  print(summary(bestfitD2$modelli[[quali2qualiD2[i]]]))
+}
+
+```
+
+## Analisi dei residui
+
+```{r}
+jarque.bera.test(rstandard(bestfitD2$modelli[[bestfitD2$pos.best]]))
+
+plot(density(rstandard(bestfitD2$modelli[[bestfitD2$pos.best]])))
+
+plot(rstandard(bestfitD2$modelli[[bestfitD2$pos.best]]))
+
+plot(bestfitD2$modelli[[bestfitD2$pos.best]])
+
+plot(bestfitD2$modelli[[bestfitD2$pos.best]], which = 6)
+plot(bestfitD2$modelli[[bestfitD2$pos.best]], which = 4)
+
+influenceIndexPlot(bestfitD2$modelli[[bestfitD2$pos.best]])
+
+influencePlot(bestfitD2$modelli[[bestfitD2$pos.best]])
+```
+
+```{r}
+cat("BICbest","BICd1","BICd2", "\n",best,bestD1,bestD2)
+```
+
+# Stabilità modello - ricampionamento percentuale
+
+```{r}
+#---------------------------------------------
+# ricampionamento dati 
+
+bootstrapP <- function(xx,seed,y,pcent){
+  
+  xx <- cbind(y,xx)
+  n <- nrow(xx)
+  k <- ncol(xx)
+  
+  p<-round(pcent*n)
+  
+  set.seed(seed)
+  index <- sample(1:n,p,replace = TRUE)
+  
+  XX<-as.data.frame(xx[index,])
+  colnames(XX) <- colnames(xx)
+  return(XX)
+}
+#---------------------------------------------
+bestBBootP <- function(xx,seed,y,nsub,pcent){
+  
+  XX <- bootstrapP(xx,seed,y,pcent)
+  Y <- XX[,1]
+  XX <- XX[,-1]
+  
+  bestBic(XX,Y,nsub)$pos.best
+  
+}
+# ---------------------------------------------
+
+modelselectionP <- function(xx,N,y,pcent){
+  
+  a = 1
+  pos = rep(0,N)
+  
+  while(a <= N){
+    
+    seed = a
+    pos[a] = bestBBootP(xx,seed,y,nsub,pcent) 
+    
+    a = a +1 
+    
+  }
+  
+  return(pos)
+  
+}
+
+```
+
+## ricampionamento 90% (dati weekend)
+
+```{r}
+nboot<-500
+
+best50boot90<-modelselectionP(xx,nboot,y,0.90)
+
+fr90<-table(best50boot90); fr90
+```
+
+## Delta Bic
+
+```{r}
+#---------------------------------------------
+### calcolo deltabic 
+ 
+quali90<-intersect(quali,best50boot90) # cluster modelli con dbic < 5 - dati parziali 
+quali90.2<-intersect(quali2,best50boot90) # cluster modelli con dbic< 2
+
+###
+qualialtri90<-quali90[quali90!=bestfit$pos.best]
+quali2altri90<-quali90.2[quali90.2!=bestfit$pos.best]
+### 
+
+nomi90<-as.numeric(names(table(best50boot90))) # modelli migliori - dati boot 90%
+
+qualiquali90<-intersect(quali90,nomi90)
+quali2quali90<-intersect(quali2altri90,nomi90)
+qualiqualialtri90<-intersect(qualialtri90,nomi90)
+
+posizioni90<-match(qualiquali90,names(fr90))
+posizioni2altri90<-match(quali2quali90,names(fr90)) # posizioni modelli dbic<2, diversi da best, nomi modelli
+posizionialtri90<-match(qualiqualialtri90,names(fr90))
+
+risultati90<-matrix(as.numeric(fr90)[posizioni90],ncol=1)
+risultati2altri90<-matrix(as.numeric(fr90)[posizioni2altri90],ncol=1)#risultati modelli dbic<2, diversi da bestd1
+risultatialtri90<-matrix(as.numeric(fr90)[posizionialtri90],ncol=1)
+
+rownames(risultati90)<-names(table(best50boot90))[posizioni90]
+rownames(risultati2altri90)<-names(table(best50boot90))[posizioni2altri90]
+rownames(risultatialtri90)<-names(table(best50boot90))[posizionialtri90]
+
+successotot90<-sum(risultati90)/nboot;
+successoaltri90<-sum(risultatialtri90)/nboot;
+successo2altri90<-sum(risultati2altri90)/nboot; # % modelli dbic <2 diversi da best
+successobest90<-successotot90-successoaltri90;
+
+cat("tot","altri","altri2","best", "\n",successotot90,successoaltri90,successo2altri90,successobest90)
+
+for(i in 1:length(qualiqualialtri90)){
+  
+  cat("*************************","\n",
+      "MODELLO CON DELTABIC < 5","\n",
+      "MODELLO NUMERO:",qualiqualialtri90[i],
+      "\n","*************************",sep="")
+  
+  print(summary(bestfit$modelli[[qualiqualialtri90[i]]]))
+}
+
+
+for(i in 1:length(quali2quali90)){
+  
+  cat("*************************","\n",
+      "MODELLO CON DELTABIC < 2","\n",
+      "MODELLO NUMERO:",quali2quali90[i],
+      "\n","*************************",sep="")
+  
+  print(summary(bestfit$modelli[[quali2quali90[i]]]))
+}
+
+```
+
+# ricampionamento 80% (dati weekend)
+
+```{r}
+nboot<-500
+
+best50boot80<-modelselectionP(xx,nboot,y,0.80)
+
+fr80<-table(best50boot80); fr80
+```
+
+## Delta Bic
+
+```{r}
+#---------------------------------------------
+
+quali80<-intersect(quali,best50boot80) # cluster modelli con dbic < 5 - 80% dati ricampionati
+quali80.2<-intersect(quali2,best50boot80) #cluster modelli con dbic <2 - 80% dati ricampionati
+
+###
+qualialtri80<-quali80[quali80!=bestfit$pos.best]
+quali2altri80<-quali80.2[quali80.2!=bestfit$pos.best] # modelli dbic < 2 diversi da best
+### 
+
+nomi80<-as.numeric(names(table(best50boot80))) # modelli migliori - dati boot
+
+qualiquali80<-intersect(quali80,nomi80)
+
+quali2quali80<-intersect(quali2altri80,nomi80)
+qualiqualialtri80<-intersect(qualialtri80,nomi80)
+
+posizioni80<-match(qualiquali80,names(fr80))
+posizioni2altri80<-match(quali2quali80,names(fr80)) # posizioni modelli dbic<2, diversi da best, nomi modelli
+posizionialtri80<-match(qualiqualialtri80,names(fr80))
+
+risultati80<-matrix(as.numeric(fr80)[posizioni80],ncol=1)
+risultati2altri80<-matrix(as.numeric(fr80)[posizioni2altri80],ncol=1)#risultati modelli dbic<2, diversi da best
+risultatialtri80<-matrix(as.numeric(fr80)[posizionialtri80],ncol=1)
+
+rownames(risultati80)<-names(table(best50boot80))[posizioni80]
+rownames(risultati2altri80)<-names(table(best50boot80))[posizioni2altri80]
+rownames(risultatialtri80)<-names(table(best50boot80))[posizionialtri80]
+
+
+successotot80<-sum(risultati80)/nboot;
+successoaltri80<-sum(risultatialtri80)/nboot;
+successo2altri80<-sum(risultati2altri80)/nboot; # % modelli dbic <2 diversi da best
+successobest80<-successotot80-successoaltri80;
+
+cat("tot","altri","altri2","best", "\n",successotot80,successoaltri80,successo2altri80,successobest80)
+
+
+for(i in 1:length(qualiqualialtri80)){
+  
+  cat("*************************","\n",
+      "MODELLO CON DELTABIC < 5","\n",
+      "MODELLO NUMERO:",qualiqualialtri80[i],
+      "\n","*************************",sep="")
+  
+  print(summary(bestfit$modelli[[qualiqualialtri80[i]]]))
+}
+
+
+for(i in 1:length(quali2quali80)){
+  
+  cat("*************************","\n",
+      "MODELLO CON DELTABIC < 2","\n",
+      "MODELLO NUMERO:",quali2quali80[i],
+      "\n","*************************",sep="")
+  
+  print(summary(bestfit$modelli[[quali2quali80[i]]]))
+}
+```
+
+## ricampionamento 90% (dati weekend) 2011 
+
+```{r}
+nboot<-500
+
+best50boot90D1<-modelselectionP(XX1,nboot,yD,0.90)
+
+fr90D1<-table(best50boot90D1); fr90D1
+```
+
+## Delta Bic
+
+```{r}
+#---------------------------------------------
+### calcolo deltabic 
+
+qualiD190<-intersect(qualiD1,best50boot90D1)# cluster modelli con dbic < 5  
+quali2D190<-intersect(quali2D1,best50boot90D1) # cluster modelli con dbic < 2 
+
+##
+qualialtriD190<-qualiD190[qualiD190!=bestfitD1$pos.best] # modelli con dbic <5 diversi da bestd1
+quali2altriD190<-quali2D190[quali2D190!=bestfitD1$pos.best] # modelli dbic < 2 diversi da bestd1
+##
+
+nomiD190<-as.numeric(names(table(best50boot90D1))) # modelli migliori - dati boot
+
+qualiqualiD190<-intersect(qualiD190,nomiD190) # insieme modelli dbic<5, nomi modelli boot
+
+quali2qualiD190<-intersect(quali2altriD190,nomiD190) # insieme modelli dbic <2, diversi da bestd1
+qualiqualialtriD190<-intersect(qualialtriD190,nomiD190) # insieme modelli dbic<5 diversi da bestd1, nomi modelli boot
+
+posizioniD190<-match(qualiqualiD190,names(fr90D1)) # posizioni modelli dbic<5
+posizioni2altriD190<-match(quali2qualiD190,names(fr90D1)) # posizioni modelli dbic<2, diversi da bestd1, nomi modelli
+posizionialtriD190<-match(qualiqualialtriD190,names(fr90D1))# posizioni modelli dbic<5, diversi da best1, nomi modelli
+
+risultatiD190<-matrix(as.numeric(fr90D1)[posizioniD190],ncol=1) # risultati modelli dbic<5
+risultati2altriD190<-matrix(as.numeric(fr90D1)[posizioni2altriD190],ncol=1)#risultati modelli dbic<2, diversi da bestd1
+risultatialtriD190<-matrix(as.numeric(fr90D1)[posizionialtriD190],ncol=1)#risultati modelli dbic<5, diversi da bestd1
+
+rownames(risultatiD190)<-names(table(best50boot90D1))[posizioniD190]
+rownames(risultati2altriD190)<-names(table(best50boot90D1))[posizioni2altriD190]
+rownames(risultatialtriD190)<-names(table(best50boot90D1))[posizionialtriD190]
+
+successototD190<-sum(risultatiD190)/nboot;
+
+successo2altriD190<-sum(risultati2altriD190)/nboot; # % modelli dbic <2 diversi da bestd1
+
+successoaltriD190<-sum(risultatialtriD190)/nboot; # % modelli dbic <5 diversi da bestd1
+
+successobestD190<-successototD190-successoaltriD190;
+
+cat("totD190","altriD190","altri2D190","bestD190", "\n",successototD190,successoaltriD190,successo2altriD190,successobestD190)
+
+
+for(i in 1:length(qualiqualialtriD190)){
+  
+  cat("*************************","\n",
+      "MODELLO CON DELTABIC < 5","\n",
+      "MODELLO NUMERO:",qualiqualialtriD190[i],
+      "\n","*************************",sep="")
+  
+  print(summary(bestfitD1$modelli[[qualiqualialtriD190[i]]]))
+}
+
+
+for(i in 1:length(quali2qualiD190)){
+  
+  cat("*************************","\n",
+      "MODELLO CON DELTABIC < 2","\n",
+      "MODELLO NUMERO:",quali2qualiD190[i],
+      "\n","*************************",sep="")
+  
+  print(summary(bestfitD1$modelli[[quali2qualiD190[i]]]))
+}
+
+```
+
+## ricampionamento 80% (dati weekend) 2011 
+
+```{r}
+nboot<-500
+
+best50boot80D1<-modelselectionP(XX1,nboot,yD,0.80)
+
+fr80D1<-table(best50boot80D1); fr80D1
+```
+
+## Delta Bic
+
+```{r}
+#---------------------------------------------
+### calcolo deltabic 
+
+qualiD180<-intersect(qualiD1,best50boot80D1)# cluster modelli con dbic < 5  
+quali2D180<-intersect(qualiD1,best50boot80D1) # cluster modelli con dbic < 2 
+
+##
+qualialtriD180<-qualiD180[qualiD180!=bestfitD1$pos.best] # modelli con dbic <5 diversi da bestd1
+quali2altriD180<-quali2D180[quali2D180!=bestfitD1$pos.best] # modelli dbic < 2 diversi da bestd1
+##
+
+nomiD180<-as.numeric(names(table(best50boot80D1))) # modelli migliori - dati boot
+
+qualiqualiD180<-intersect(qualiD180,nomiD180) # insieme modelli dbic<5, nomi modelli boot
+
+quali2qualiD180<-intersect(quali2altriD180,nomiD180) # insieme modelli dbic <2, diversi da bestd1
+qualiqualialtriD180<-intersect(qualialtriD180,nomiD180) # insieme modelli dbic<5 diversi da bestd1, nomi modelli boot
+
+posizioniD180<-match(qualiqualiD180,names(fr80D1)) # posizioni modelli dbic<5
+posizioni2altriD180<-match(quali2qualiD180,names(fr80D1)) # posizioni modelli dbic<2, diversi da bestd1, nomi modelli
+posizionialtriD180<-match(qualiqualialtriD180,names(fr80D1))# posizioni modelli dbic<5, diversi da best1, nomi modelli
+
+risultatiD180<-matrix(as.numeric(fr80D1)[posizioniD180],ncol=1) # risultati modelli dbic<5
+risultati2altriD180<-matrix(as.numeric(fr80D1)[posizioni2altriD180],ncol=1)#risultati modelli dbic<2, diversi da bestd1
+risultatialtriD180<-matrix(as.numeric(fr80D1)[posizionialtriD180],ncol=1)#risultati modelli dbic<5, diversi da bestd1
+
+rownames(risultatiD180)<-names(table(best50boot80D1))[posizioniD180]
+rownames(risultati2altriD180)<-names(table(best50boot80D1))[posizioni2altriD180]
+rownames(risultatialtriD180)<-names(table(best50boot80D1))[posizionialtriD180]
+
+successototD180<-sum(risultatiD180)/nboot;
+
+successo2altriD180<-sum(risultati2altriD180)/nboot; # % modelli dbic <2 diversi da bestd1
+
+successoaltriD180<-sum(risultatialtriD180)/nboot; # % modelli dbic <5 diversi da bestd1
+
+successobestD180<-successototD180-successoaltriD180;
+
+cat("totD180","altriD180","altri2D180","bestD180", "\n",successototD190,successoaltriD190,successo2altriD190,successobestD190)
+
+
+for(i in 1:length(qualiqualialtriD180)){
+  
+  cat("*************************","\n",
+      "MODELLO CON DELTABIC < 5","\n",
+      "MODELLO NUMERO:",qualiqualialtriD180[i],
+      "\n","*************************",sep="")
+  
+  print(summary(bestfitD1$modelli[[qualiqualialtriD180[i]]]))
+}
+
+
+for(i in 1:length(quali2qualiD180)){
+  
+  cat("*************************","\n",
+      "MODELLO CON DELTABIC < 2","\n",
+      "MODELLO NUMERO:",quali2qualiD180[i],
+      "\n","*************************",sep="")
+  
+  print(summary(bestfitD1$modelli[[quali2qualiD180[i]]]))
+}
+
+```
+
+## ricampionamento 90% (dati weekend) 2012
+
+```{r}
+nboot<-500
+
+best50boot90D2<-modelselectionP(XX2,nboot,yDD,0.90)
+
+fr90D2<-table(best50boot90D2); fr90D2
+```
+
+## Delta Bic
+
+```{r}
+#---------------------------------------------
+### calcolo deltabic 
+
+qualiD290<-intersect(qualiD2,best50boot90D2)# cluster modelli con dbic < 5  
+quali2D290<-intersect(quali2D2,best50boot90D2) # cluster modelli con dbic < 2 
+
+##
+qualialtriD290<-qualiD290[qualiD290!=bestfitD2$pos.best] # modelli con dbic <5 diversi da bestd1
+quali2altriD290<-quali2D290[quali2D290!=bestfitD2$pos.best] # modelli dbic < 2 diversi da bestd1
+##
+
+nomiD290<-as.numeric(names(table(best50boot90D2))) # modelli migliori - dati boot
+
+qualiqualiD290<-intersect(qualiD290,nomiD290) # insieme modelli dbic<5, nomi modelli boot
+
+quali2qualiD290<-intersect(quali2altriD290,nomiD290) # insieme modelli dbic <2, diversi da bestd1
+qualiqualialtriD290<-intersect(qualialtriD290,nomiD290) # insieme modelli dbic<5 diversi da bestd1, nomi modelli boot
+
+posizioniD290<-match(qualiqualiD290,names(fr90D2)) # posizioni modelli dbic<5
+posizioni2altriD290<-match(quali2qualiD290,names(fr90D2)) # posizioni modelli dbic<2, diversi da bestd1, nomi modelli
+posizionialtriD290<-match(qualiqualialtriD290,names(fr90D2))# posizioni modelli dbic<5, diversi da best1, nomi modelli
+
+risultatiD290<-matrix(as.numeric(fr90D2)[posizioniD290],ncol=1) # risultati modelli dbic<5
+risultati2altriD290<-matrix(as.numeric(fr90D2)[posizioni2altriD290],ncol=1)#risultati modelli dbic<2, diversi da bestd1
+risultatialtriD290<-matrix(as.numeric(fr90D2)[posizionialtriD290],ncol=1)#risultati modelli dbic<5, diversi da bestd1
+
+rownames(risultatiD290)<-names(table(best50boot90D2))[posizioniD290]
+rownames(risultati2altriD290)<-names(table(best50boot90D2))[posizioni2altriD290]
+rownames(risultatialtriD290)<-names(table(best50boot90D2))[posizionialtriD290]
+
+successototD290<-sum(risultatiD290)/nboot;
+
+successo2altriD290<-sum(risultati2altriD290)/nboot; # % modelli dbic <2 diversi da bestd1
+
+successoaltriD290<-sum(risultatialtriD290)/nboot; # % modelli dbic <5 diversi da bestd1
+
+successobestD290<-successototD290-successoaltriD290;
+
+cat("totD290","altriD290","altri2D290","bestD290", "\n",successototD290,successoaltriD290,successo2altriD290,successobestD290)
+
+
+for(i in 1:length(qualiqualialtriD290)){
+  
+  cat("*************************","\n",
+      "MODELLO CON DELTABIC < 5","\n",
+      "MODELLO NUMERO:",qualiqualialtriD290[i],
+      "\n","*************************",sep="")
+  
+  print(summary(bestfitD2$modelli[[qualiqualialtriD290[i]]]))
+}
+
+
+for(i in 1:length(quali2qualiD290)){
+  
+  cat("*************************","\n",
+      "MODELLO CON DELTABIC < 2","\n",
+      "MODELLO NUMERO:",quali2qualiD290[i],
+      "\n","*************************",sep="")
+  
+  print(summary(bestfitD2$modelli[[quali2qualiD290[i]]]))
+}
+
+```
+
+## ricampionamento 80% (dati weekend) 2012 
+
+```{r}
+nboot<-500
+
+best50boot80D2<-modelselectionP(XX2,nboot,yDD,0.80)
+
+fr80D2<-table(best50boot80D2); fr80D2
+```
+
+## Delta Bic
+
+```{r}
+#---------------------------------------------
+### calcolo deltabic 
+
+qualiD280<-intersect(qualiD2,best50boot80D2)# cluster modelli con dbic < 5  
+quali2D280<-intersect(quali2D2,best50boot80D2) # cluster modelli con dbic < 2 
+
+##
+qualialtriD280<-qualiD280[qualiD280!=bestfitD2$pos.best] # modelli con dbic <5 diversi da bestd1
+quali2altriD280<-quali2D280[quali2D280!=bestfitD2$pos.best] # modelli dbic < 2 diversi da bestd1
+##
+
+nomiD280<-as.numeric(names(table(best50boot80D2))) # modelli migliori - dati boot
+
+qualiqualiD280<-intersect(qualiD280,nomiD280) # insieme modelli dbic<5, nomi modelli boot
+
+quali2qualiD280<-intersect(quali2altriD280,nomiD280) # insieme modelli dbic <2, diversi da bestd1
+qualiqualialtriD280<-intersect(qualialtriD280,nomiD280) # insieme modelli dbic<5 diversi da bestd1, nomi modelli boot
+
+posizioniD280<-match(qualiqualiD280,names(fr80D2)) # posizioni modelli dbic<5
+posizioni2altriD280<-match(quali2qualiD280,names(fr80D2)) # posizioni modelli dbic<2, diversi da bestd1, nomi modelli
+posizionialtriD280<-match(qualiqualialtriD280,names(fr80D2))# posizioni modelli dbic<5, diversi da best1, nomi modelli
+
+risultatiD280<-matrix(as.numeric(fr80D2)[posizioniD280],ncol=1) # risultati modelli dbic<5
+risultati2altriD280<-matrix(as.numeric(fr80D2)[posizioni2altriD280],ncol=1)#risultati modelli dbic<2, diversi da bestd1
+risultatialtriD280<-matrix(as.numeric(fr80D2)[posizionialtriD280],ncol=1)#risultati modelli dbic<5, diversi da bestd1
+
+rownames(risultatiD280)<-names(table(best50boot80D2))[posizioniD280]
+rownames(risultati2altriD280)<-names(table(best50boot80D2))[posizioni2altriD280]
+rownames(risultatialtriD280)<-names(table(best50boot80D2))[posizionialtriD280]
+
+successototD280<-sum(risultatiD280)/nboot;
+
+successo2altriD280<-sum(risultati2altriD280)/nboot; # % modelli dbic <2 diversi da bestd1
+
+successoaltriD280<-sum(risultatialtriD280)/nboot; # % modelli dbic <5 diversi da bestd1
+
+successobestD280<-successototD280-successoaltriD280;
+
+cat("totD280","altriD280","altri2D280","bestD280", "\n",successototD290,successoaltriD290,successo2altriD290,successobestD290)
+
+
+for(i in 1:length(qualiqualialtriD280)){
+  
+  cat("*************************","\n",
+      "MODELLO CON DELTABIC < 5","\n",
+      "MODELLO NUMERO:",qualiqualialtriD280[i],
+      "\n","*************************",sep="")
+  
+  print(summary(bestfitD2$modelli[[qualiqualialtriD280[i]]]))
+}
+
+
+for(i in 1:length(quali2qualiD280)){
+  
+  cat("*************************","\n",
+      "MODELLO CON DELTABIC < 2","\n",
+      "MODELLO NUMERO:",quali2qualiD280[i],
+      "\n","*************************",sep="")
+  
+  print(summary(bestfitD2$modelli[[quali2qualiD280[i]]]))
+}
+
+```
+
+
+# Filtro per dati anomali 
+
+```{r}
+
+event<-c(50,204,239,351,463,478,548,554,555)
+
+eventpost<-match(event,sett[,1])
+
+anomal<-sett[-eventpost,]
+
+```
+
+### Codifica variabili 
+```{r}
+# dicotomizzo weathersit 
+w.situation<-as.factor(ifelse(anomal$weathersit == 1,1,0))
+
+s.1<-factor(ifelse(anomal$season<=2,1,0))
+s.2<-factor(ifelse(anomal$season>=3,1,0))
+#---------------------------------------------
+reg.anomal<-factor(ifelse(anomal$registered>=mean(anomal$registered),1,0))
+
+# elimino le variabili dicotomizzate
+xxA = anomal[,-c(1:10,14:16)]
+
+xxA = as.data.frame(cbind(xxA,w.situation,s.1,reg.anomal))
+
+head(xxA)
+
+str(xxA)
+
+```
+
+## Trasformazione logaritmica della variabile risposta
+
+```{r}
+yA <- sqrt(anomal$cnt - anomal$registered)
+
+plot(density(yA))
+```
+
+## Stima dei modelli
+
+```{r}
+
+nsubA<-my.comb(ncol(xxA))
+
+bestfitA<-bestBic(xxA,yA,nsubA)
+
+summary(bestfitA$modelli[[bestfitA$pos.best]])
+
+vif(bestfitA$modelli[[bestfitA$pos.best]])
+
+```
+
+## Ricampionamento
+
+```{r}
+nbootA<-500
+
+best50bootA<-modelselection(xxA,nbootA,yA)
+
+frA<-table(best50bootA); frA
+```
+
+## Delta Bic
+
+```{r}
+#---------------------------------------------
+### calcolo deltabic 
+bestA<- bestfitA$vettbic[bestfitA$pos.best]; bestA  
+deltabicA<- bestfitA$vettbic - bestA # Bic modelli - BIC modello migliore 
+
+gruppoA<- which(deltabicA<5) # differenze in BIC minori di 5 
+gruppo2A<-which(deltabicA<2)
+
+qualisigA<-which(bestfitA$sig==1 & bestfitA$resig==0) # posizioni dei modelli con tutte variabili significative 
+
+qualiA<-intersect(gruppoA,qualisigA) # cluster modelli con dbic < 5 - dati originali 
+quali2A<-intersect(gruppo2A,qualisigA)# cluster dbic <2 
+
+###
+qualialtriA<-qualiA[qualiA!=bestfitA$pos.best]
+quali2altriA<-quali2A[quali2A!=bestfitA$pos.best]
+### 
+
+nomiA<-as.numeric(names(table(best50bootA))) # modelli migliori - dati boot
+
+qualiqualiA<-intersect(qualiA,nomiA)
+
+quali2qualiA<-intersect(quali2altriA,nomiA)
+qualiqualialtriA<-intersect(qualialtriA,nomiA)
+
+posizioniA<-match(qualiqualiA,names(frA))
+posizioni2altriA<-match(quali2qualiA,names(frA))
+posizionialtriA<-match(qualiqualialtriA,names(frA))
+
+risultatiA<-matrix(as.numeric(frA)[posizioniA],ncol=1)
+risultati2altriA<-matrix(as.numeric(frA)[posizioni2altriA],ncol=1)
+risultatialtriA<-matrix(as.numeric(frA)[posizionialtriA],ncol=1)
+
+rownames(risultatiA)<-names(table(best50bootA))[posizioniA]
+rownames(risultati2altriA)<-names(table(best50bootA))[posizioni2altriA]
+rownames(risultatialtriA)<-names(table(best50bootA))[posizionialtriA]
+
+successototA<-sum(risultatiA)/nbootA;
+successoaltriA<-sum(risultatialtriA)/nbootA;
+successo2altriA<-sum(risultati2altriA)/nbootA;
+successobestA<-successototA-successoaltriA;
+
+cat("tot","altri","altri2","best", "\n",successototA,successoaltriA,successo2altriA,successobestA)
+
+
+for(i in 1:length(qualiqualialtriA)){
+  
+  cat("*************************","\n",
+      "MODELLO CON DELTABIC < 5","\n",
+      "MODELLO NUMERO:",qualiqualialtriA[i],
+      "\n","*************************",sep="")
+  
+  print(summary(bestfitA$modelli[[qualiqualialtriA[i]]]))
+}
+
+
+for(i in 1:length(quali2qualiA)){
+  
+  cat("*************************","\n",
+      "MODELLO CON DELTABIC < 2","\n",
+      "MODELLO NUMERO:",quali2qualiA[i],
+      "\n","*************************",sep="")
+  
+  print(summary(bestfitA$modelli[[quali2qualiA[i]]]))
+}
+
+```
+
+## Analisi dei residui 
+
+```{r}
+jarque.bera.test(rstandard(bestfitA$modelli[[bestfitA$pos.best]]))
+
+plot(density(rstandard(bestfitA$modelli[[bestfitA$pos.best]])))
+
+plot(rstandard(bestfitA$modelli[[bestfitA$pos.best]]))
+
+plot(bestfitA$modelli[[bestfitA$pos.best]])
+
+plot(bestfitA$modelli[[bestfitA$pos.best]], which = 6)
+plot(bestfitA$modelli[[bestfitA$pos.best]], which = 4)
+
+influenceIndexPlot(bestfitA$modelli[[bestfitA$pos.best]])
+
+influencePlot(bestfitA$modelli[[bestfitA$pos.best]])
+```
+
+## ricampionamento 90% weekend (-anomali)
+
+```{r}
+nboot<-500
+
+best50bootA90<-modelselectionP(xxA,nboot,yA,0.90)
+
+fr90A<-table(best50bootA90); fr90A
+```
+
+## Delta Bic
+
+```{r}
+#---------------------------------------------
+### calcolo deltabic 
+
+qualiA90<-intersect(qualiA,best50bootA90)# cluster modelli con dbic < 5  
+quali2A90<-intersect(quali2A,best50bootA90) # cluster modelli con dbic < 2 
+
+##
+qualialtriA90<-qualiA90[qualiA90!=bestfitA$pos.best] # modelli con dbic <5 diversi da bestd1
+quali2altriA90<-quali2A90[quali2A90!=bestfitA$pos.best] # modelli dbic < 2 diversi da bestd1
+##
+
+nomiA90<-as.numeric(names(table(best50bootA90))) # modelli migliori - dati boot
+
+qualiqualiA90<-intersect(qualiA90,nomiA90) # insieme modelli dbic<5, nomi modelli boot
+
+quali2qualiA90<-intersect(quali2altriA90,nomiA90) # insieme modelli dbic <2, diversi da bestd1
+qualiqualialtriA90<-intersect(qualialtriA90,nomiA90) # insieme modelli dbic<5 diversi da bestd1, nomi modelli boot
+
+posizioniA90<-match(qualiqualiA90,names(fr90A)) # posizioni modelli dbic<5
+posizioni2altriA90<-match(quali2qualiA90,names(fr90A)) # posizioni modelli dbic<2, diversi da bestd1, nomi modelli
+posizionialtriA90<-match(qualiqualialtriA90,names(fr90A))# posizioni modelli dbic<5, diversi da best1, nomi modelli
+
+risultatiA90<-matrix(as.numeric(fr90A)[posizioniA90],ncol=1) # risultati modelli dbic<5
+risultati2altriA90<-matrix(as.numeric(fr90A)[posizioni2altriA90],ncol=1)#risultati modelli dbic<2, diversi da bestd1
+risultatialtriA90<-matrix(as.numeric(fr90A)[posizionialtriA90],ncol=1)#risultati modelli dbic<5, diversi da bestd1
+
+rownames(risultatiA90)<-names(table(best50bootA90))[posizioniA90]
+rownames(risultati2altriA90)<-names(table(best50bootA90))[posizioni2altriA90]
+rownames(risultatialtriA90)<-names(table(best50bootA90))[posizionialtriA90]
+
+successototA90<-sum(risultatiA90)/nboot;
+
+successo2altriA90<-sum(risultati2altriA90)/nboot; # % modelli dbic <2 diversi da bestd1
+
+successoaltriA90<-sum(risultatialtriA90)/nboot; # % modelli dbic <5 diversi da bestd1
+
+successobestA90<-successototA90-successoaltriA90;
+
+cat("totA90","altriA90","altri2A90","bestA90", "\n",successototA90,successoaltriA90,successo2altriA90,successobestA90)
+
+
+for(i in 1:length(qualiqualialtriA90)){
+  
+  cat("*************************","\n",
+      "MODELLO CON DELTABIC < 5","\n",
+      "MODELLO NUMERO:",qualiqualialtriA90[i],
+      "\n","*************************",sep="")
+  
+  print(summary(bestfitA$modelli[[qualiqualialtriA90[i]]]))
+}
+
+
+for(i in 1:length(quali2qualiA90)){
+  
+  cat("*************************","\n",
+      "MODELLO CON DELTABIC < 2","\n",
+      "MODELLO NUMERO:",quali2qualiA90[i],
+      "\n","*************************",sep="")
+  
+  print(summary(bestfitA$modelli[[quali2qualiA90[i]]]))
+}
+
+```
+
+## ricampionamento 80% weekend (-anomali)
+
+```{r}
+nboot<-500
+
+best50bootA80<-modelselectionP(xxA,nboot,yA,0.80)
+
+fr80A<-table(best50bootA80); fr80A
+```
+
+## Delta Bic
+
+```{r}
+#---------------------------------------------
+### calcolo deltabic 
+
+qualiA80<-intersect(qualiA,best50bootA80)# cluster modelli con dbic < 5  
+quali2A80<-intersect(quali2A,best50bootA80) # cluster modelli con dbic < 2 
+
+##
+qualialtriA80<-qualiA80[qualiA80!=bestfitA$pos.best] # modelli con dbic <5 diversi da bestd1
+quali2altriA80<-quali2A80[quali2A80!=bestfitA$pos.best] # modelli dbic < 2 diversi da bestd1
+##
+
+nomiA80<-as.numeric(names(table(best50bootA80))) # modelli migliori - dati boot
+
+qualiqualiA80<-intersect(qualiA80,nomiA80) # insieme modelli dbic<5, nomi modelli boot
+quali2qualiA80<-intersect(quali2altriA80,nomiA80) # insieme modelli dbic <2, diversi da bestd1
+qualiqualialtriA80<-intersect(qualialtriA80,nomiA80) # insieme modelli dbic<5 diversi da bestd1, nomi modelli boot
+
+posizioniA80<-match(qualiqualiA80,names(fr80A)) # posizioni modelli dbic<5
+posizioni2altriA80<-match(quali2qualiA80,names(fr80A)) # posizioni modelli dbic<2, diversi da bestd1, nomi modelli
+posizionialtriA80<-match(qualiqualialtriA80,names(fr80A))# posizioni modelli dbic<5, diversi da best1, nomi modelli
+
+risultatiA80<-matrix(as.numeric(fr80A)[posizioniA80],ncol=1) # risultati modelli dbic<5
+risultati2altriA80<-matrix(as.numeric(fr80A)[posizioni2altriA80],ncol=1)#risultati modelli dbic<2, diversi da bestd1
+risultatialtriA80<-matrix(as.numeric(fr80A)[posizionialtriA80],ncol=1)#risultati modelli dbic<5, diversi da bestd1
+
+rownames(risultatiA80)<-names(table(best50bootA80))[posizioniA80]
+rownames(risultati2altriA80)<-names(table(best50bootA80))[posizioni2altriA80]
+rownames(risultatialtriA80)<-names(table(best50bootA80))[posizionialtriA80]
+
+successototA80<-sum(risultatiA80)/nboot;
+
+successo2altriA80<-sum(risultati2altriA80)/nboot; # % modelli dbic <2 diversi da bestd1
+
+successoaltriA80<-sum(risultatialtriA80)/nboot; # % modelli dbic <5 diversi da bestd1
+
+successobestA80<-successototA80-successoaltriA80;
+
+cat("totA80","altriA80","altri2A80","bestA80", "\n",successototA80,successoaltriA80,successo2altriA80,successobestA80)
+
+
+for(i in 1:length(qualiqualialtriA80)){
+  
+  cat("*************************","\n",
+      "MODELLO CON DELTABIC < 5","\n",
+      "MODELLO NUMERO:",qualiqualialtriA80[i],
+      "\n","*************************",sep="")
+  
+  print(summary(bestfitA$modelli[[qualiqualialtriA80[i]]]))
+}
+
+
+for(i in 1:length(quali2qualiA80)){
+  
+  cat("*************************","\n",
+      "MODELLO CON DELTABIC < 2","\n",
+      "MODELLO NUMERO:",quali2qualiA80[i],
+      "\n","*************************",sep="")
+  
+  print(summary(bestfitA$modelli[[quali2qualiA80[i]]]))
+}
+
+```
+
+# Dati Weekend 2011 (-anomali)
+
+```{r}
+sett$dteday<-as.numeric(sett$dteday)
+
+D1<-sett[sett$dteday <= 365,] # filtro per anno 2011
+D2<-sett[sett$dteday > 365,]# filtro per anno 2012
+
+event<-c(50,204,239,351,463,478,548,554,555) # osservazioni eventi anomali
+
+eventp<-na.omit(match(event,D1[,1]))
+
+D1A<-D1[-eventp,]
+
+yD1A<- sqrt(D1A$cnt - D1A$registered)
+plot(density(yD1A))
+
+###
+weathersitd1A<-as.factor(ifelse(D1A$weathersit == 1,1,0))
+seasond1A<-factor(ifelse(D1A$season<=2,1,0))
+regd1A<-factor(ifelse(D1A$registered>=mean(D1A$registered),1,0))
+###
+
+XX1A = D1A[,-c(1:10,14:16)]
+
+XX1A = as.data.frame(cbind(XX1A,weathersitd1A,seasond1A,regd1A))
+
+head(XX1A)
+
+str(XX1A)
+
+```
+
+## Stime dei modelli 
+
+```{r}
+nsubD1A<-my.comb(ncol(XX1A))
+
+bestfitD1A<-bestBic(XX1A,yD1A,nsubD1A)
+
+summary(bestfitD1A$modelli[[bestfitD1A$pos.best]])
+
+vif(bestfitD1A$modelli[[bestfitD1A$pos.best]])
+
+bestfitD1A$jb.test[[bestfitD1A$pos.best]]
+
+nboot<-500
+
+best50bootD1A<-modelselection(XX1A,nboot,yD1A)
+
+frD1A<-table(best50bootD1A); frD1A
+```
+
+## Delta BIC 
+
+```{r}
+### calcolo deltabic 
+bestD1A<- bestfitD1A$vettbic[bestfitD1A$pos.best] # Bic del modello migliore D1 
+deltabicD1A<- bestfitD1A$vettbic - bestD1A # Bic modelli - BIC modello migliore 
+
+gruppoD1A<- which(deltabicD1A<5) # differenze in BIC minori di 5  
+gruppo2D1A<-which(deltabicD1A<2) # differenze in BIC minori di 2
+
+qualisigD1A<-which(bestfitD1A$sig==1 & bestfitD1A$resig==0) # posizioni dei modelli con tutte variabili significative 
+
+qualiD1A<-intersect(gruppoD1A,qualisigD1A)# cluster modelli con dbic < 5  
+quali2D1A<-intersect(gruppo2D1A,qualisigD1A) # cluster modelli con dbic < 2 
+
+##
+qualialtriD1A<-qualiD1A[qualiD1A!=bestfitD1A$pos.best] # modelli con dbic <5 diversi da bestd1
+quali2altriD1A<-quali2D1A[quali2D1A!=bestfitD1A$pos.best] # modelli dbic < 2 diversi da bestd1
+##
+
+nomiD1A<-as.numeric(names(table(best50bootD1A))) # modelli migliori - dati boot
+
+qualiqualiD1A<-intersect(qualiD1A,nomiD1A) # insieme modelli dbic<5, nomi modelli boot
+
+quali2qualiD1A<-intersect(quali2altriD1A,nomiD1A) # insieme modelli dbic <2, diversi da bestd1
+qualiqualialtriD1A<-intersect(qualialtriD1A,nomiD1A) # insieme modelli dbic<5 diversi da bestd1, nomi modelli boot
+
+posizioniD1A<-match(qualiqualiD1A,names(frD1A)) # posizioni modelli dbic<5
+posizioni2altriD1A<-match(quali2qualiD1A,names(frD1A)) # posizioni modelli dbic<2, diversi da bestd1, nomi modelli
+posizionialtriD1A<-match(qualiqualialtriD1A,names(frD1A))# posizioni modelli dbic<5, diversi da best1, nomi modelli
+
+risultatiD1A<-matrix(as.numeric(frD1A)[posizioniD1A],ncol=1) # risultati modelli dbic<5
+risultati2altriD1A<-matrix(as.numeric(frD1A)[posizioni2altriD1A],ncol=1)#risultati modelli dbic<2, diversi da bestd1
+risultatialtriD1A<-matrix(as.numeric(frD1A)[posizionialtriD1A],ncol=1)#risultati modelli dbic<5, diversi da bestd1
+
+rownames(risultatiD1A)<-names(table(best50bootD1A))[posizioniD1A]
+rownames(risultati2altriD1A)<-names(table(best50bootD1A))[posizioni2altriD1A]
+rownames(risultatialtriD1A)<-names(table(best50bootD1A))[posizionialtriD1A]
+
+successototD1A<-sum(risultatiD1A)/nboot;
+
+successo2altriD1A<-sum(risultati2altriD1A)/nboot; # % modelli dbic <2 diversi da bestd1
+
+successoaltriD1A<-sum(risultatialtriD1A)/nboot; # % modelli dbic <5 diversi da bestd1
+
+successobestD1A<-successototD1A-successoaltriD1A;
+
+cat("totD1A","altriD1A","altri2D1A","bestD1A", "\n",successototD1A,successoaltriD1A,successo2altriD1A,successobestD1A)
+
+
+for(i in 1:length(qualiqualialtriD1A)){
+  
+  cat("*************************","\n",
+      "MODELLO CON DELTABIC < 5","\n",
+      "MODELLO NUMERO:",qualiqualialtriD1A[i],
+      "\n","*************************",sep="")
+  
+  print(summary(bestfitD1A$modelli[[qualiqualialtriD1A[i]]]))
+}
+
+
+for(i in 1:length(quali2qualiD1A)){
+  
+  cat("*************************","\n",
+      "MODELLO CON DELTABIC < 2","\n",
+      "MODELLO NUMERO:",quali2qualiD1A[i],
+      "\n","*************************",sep="")
+  
+  print(summary(bestfitD1A$modelli[[quali2qualiD1A[i]]]))
+}
+
+```
+## ricampionamento 90% dati weekend 2011 (-anomali)
+
+```{r}
+nboot<-500
+
+best50boot90D1A<-modelselectionP(XX1A,nboot,yD1A,0.90)
+
+fr90D1A<-table(best50boot90D1A); fr90D1A
+```
+
+## Delta Bic
+
+```{r}
+
+qualiD190A<-intersect(qualiD1A,best50boot90D1A)# cluster modelli con dbic < 5  
+quali2D190A<-intersect(quali2D1A,best50boot90D1A) # cluster modelli con dbic < 2 
+
+##
+qualialtriD190A<-qualiD190A[qualiD190A!=bestfitD1A$pos.best] # modelli con dbic <5 diversi da bestd1
+quali2altriD190A<-quali2D190A[quali2D190A!=bestfitD1A$pos.best] # modelli dbic < 2 diversi da bestd1
+##
+
+nomiD190A<-as.numeric(names(table(best50boot90D1A))) # modelli migliori - dati boot
+
+qualiqualiD190A<-intersect(qualiD190A,nomiD190A) # insieme modelli dbic<5, nomi modelli boot
+
+quali2qualiD190A<-intersect(quali2altriD190A,nomiD190A) # insieme modelli dbic <2, diversi da bestd1
+qualiqualialtriD190A<-intersect(qualialtriD190A,nomiD190A) # insieme modelli dbic<5 diversi da bestd1, nomi modelli boot
+
+posizioniD190A<-match(qualiqualiD190A,names(fr90D1A)) # posizioni modelli dbic<5
+posizioni2altriD190A<-match(quali2qualiD190A,names(fr90D1A)) # posizioni modelli dbic<2, diversi da bestd1, nomi modelli
+posizionialtriD190A<-match(qualiqualialtriD190A,names(fr90D1A))# posizioni modelli dbic<5, diversi da best1, nomi modelli
+
+risultatiD190A<-matrix(as.numeric(fr90D1A)[posizioniD190A],ncol=1) # risultati modelli dbic<5
+risultati2altriD190A<-matrix(as.numeric(fr90D1A)[posizioni2altriD190A],ncol=1)#risultati modelli dbic<2, diversi da bestd1
+risultatialtriD190A<-matrix(as.numeric(fr90D1A)[posizionialtriD190A],ncol=1)#risultati modelli dbic<5, diversi da bestd1
+
+rownames(risultatiD190A)<-names(table(best50boot90D1A))[posizioniD190A]
+rownames(risultati2altriD190A)<-names(table(best50boot90D1A))[posizioni2altriD190A]
+rownames(risultatialtriD190A)<-names(table(best50boot90D1A))[posizionialtriD190A]
+
+successototD190A<-sum(risultatiD190A)/nboot;
+
+successo2altriD190A<-sum(risultati2altriD190A)/nboot; # % modelli dbic <2 diversi da bestd1
+
+successoaltriD190A<-sum(risultatialtriD190A)/nboot; # % modelli dbic <5 diversi da bestd1
+
+successobestD190A<-successototD190A-successoaltriD190A;
+
+cat("totD190A","altriD190A","altri2D190A","bestD190A", "\n",successototD190A,successoaltriD190A,successo2altriD190A,successobestD190A)
+
+
+for(i in 1:length(qualiqualialtriD190A)){
+  
+  cat("*************************","\n",
+      "MODELLO CON DELTABIC < 5","\n",
+      "MODELLO NUMERO:",qualiqualialtriD190A[i],
+      "\n","*************************",sep="")
+  
+  print(summary(bestfitD1A$modelli[[qualiqualialtriD190A[i]]]))
+}
+
+
+for(i in 1:length(quali2qualiD190A)){
+  
+  cat("*************************","\n",
+      "MODELLO CON DELTABIC < 2","\n",
+      "MODELLO NUMERO:",quali2qualiD190A[i],
+      "\n","*************************",sep="")
+  
+  print(summary(bestfitD1A$modelli[[quali2qualiD190A[i]]]))
+}
+
+```
+## ricampionamento 80% dati weekend 2011 (-anomali)
+
+```{r}
+nboot<-500
+
+best50boot80D1A<-modelselectionP(XX1A,nboot,yD1A,0.80)
+
+fr80D1A<-table(best50boot80D1A); fr80D1A
+```
+
+## Delta Bic
+
+```{r}
+
+qualiD180A<-intersect(qualiD1A,best50boot80D1A)# cluster modelli con dbic < 5  
+quali2D180A<-intersect(quali2D1A,best50boot80D1A) # cluster modelli con dbic < 2 
+
+##
+qualialtriD180A<-qualiD180A[qualiD180A!=bestfitD1A$pos.best] # modelli con dbic <5 diversi da bestd1
+quali2altriD180A<-quali2D180A[quali2D180A!=bestfitD1A$pos.best] # modelli dbic < 2 diversi da bestd1
+##
+
+nomiD180A<-as.numeric(names(table(best50boot80D1A))) # modelli migliori - dati boot
+
+qualiqualiD180A<-intersect(qualiD180A,nomiD180A) # insieme modelli dbic<5, nomi modelli boot
+
+quali2qualiD180A<-intersect(quali2altriD180A,nomiD180A) # insieme modelli dbic <2, diversi da bestd1
+qualiqualialtriD180A<-intersect(qualialtriD180A,nomiD180A) # insieme modelli dbic<5 diversi da bestd1, nomi modelli boot
+
+posizioniD180A<-match(qualiqualiD180A,names(fr80D1A)) # posizioni modelli dbic<5
+posizioni2altriD180A<-match(quali2qualiD180A,names(fr80D1A)) # posizioni modelli dbic<2, diversi da bestd1, nomi modelli
+posizionialtriD180A<-match(qualiqualialtriD180A,names(fr80D1A))# posizioni modelli dbic<5, diversi da best1, nomi modelli
+
+risultatiD180A<-matrix(as.numeric(fr80D1A)[posizioniD180A],ncol=1) # risultati modelli dbic<5
+risultati2altriD180A<-matrix(as.numeric(fr80D1A)[posizioni2altriD180A],ncol=1)#risultati modelli dbic<2, diversi da bestd1
+risultatialtriD180A<-matrix(as.numeric(fr80D1A)[posizionialtriD180A],ncol=1)#risultati modelli dbic<5, diversi da bestd1
+
+rownames(risultatiD180A)<-names(table(best50boot80D1A))[posizioniD180A]
+rownames(risultati2altriD180A)<-names(table(best50boot80D1A))[posizioni2altriD180A]
+rownames(risultatialtriD180A)<-names(table(best50boot80D1A))[posizionialtriD180A]
+
+successototD180A<-sum(risultatiD180A)/nboot;
+
+successo2altriD180A<-sum(risultati2altriD180A)/nboot; # % modelli dbic <2 diversi da bestd1
+
+successoaltriD180A<-sum(risultatialtriD180A)/nboot; # % modelli dbic <5 diversi da bestd1
+
+successobestD180A<-successototD180A-successoaltriD180A;
+
+cat("totD180A","altriD180A","altri2D180A","bestD180A", "\n",successototD180A,successoaltriD180A,successo2altriD180A,successobestD180A)
+
+
+for(i in 1:length(qualiqualialtriD180A)){
+  
+  cat("*************************","\n",
+      "MODELLO CON DELTABIC < 5","\n",
+      "MODELLO NUMERO:",qualiqualialtriD180A[i],
+      "\n","*************************",sep="")
+  
+  print(summary(bestfitD1A$modelli[[qualiqualialtriD180A[i]]]))
+}
+
+
+for(i in 1:length(quali2qualiD180A)){
+  
+  cat("*************************","\n",
+      "MODELLO CON DELTABIC < 2","\n",
+      "MODELLO NUMERO:",quali2qualiD180A[i],
+      "\n","*************************",sep="")
+  
+  print(summary(bestfitD1A$modelli[[quali2qualiD180A[i]]]))
+}
+
+```
+
+# Dati Weekend 2012 (-anomali)
+
+```{r}
+sett$dteday<-as.numeric(sett$dteday)
+
+D1<-sett[sett$dteday <= 365,] # filtro per anno 2011
+D2<-sett[sett$dteday > 365,]# filtro per anno 2012
+
+event<-c(50,204,239,351,463,478,548,554,555) # osservazioni eventi anomali
+
+eventp2<-na.omit(match(event,D2[,1]))
+
+D2A<-D2[-eventp2,]
+
+yD2A<- sqrt(D2A$cnt - D2A$registered)
+plot(density(yD2A))
+
+###
+weathersitd2A<-as.factor(ifelse(D2A$weathersit == 1,1,0))
+seasond2A<-factor(ifelse(D2A$season<=2,1,0))
+regd2A<-factor(ifelse(D2A$registered>=mean(D2A$registered),1,0))
+###
+
+XX2A = D2A[,-c(1:10,14:16)]
+
+XX2A = as.data.frame(cbind(XX2A,weathersitd2A,seasond2A,regd2A))
+
+head(XX2A)
+
+str(XX2A)
+
+```
+
+## Stime dei modelli 
+
+```{r}
+nsubD2A<-my.comb(ncol(XX2A))
+
+bestfitD2A<-bestBic(XX2A,yD2A,nsubD2A)
+
+summary(bestfitD2A$modelli[[bestfitD2A$pos.best]])
+
+vif(bestfitD2A$modelli[[bestfitD2A$pos.best]])
+
+bestfitD2A$jb.test[[bestfitD2A$pos.best]]
+
+nboot<-500
+
+best50bootD2A<-modelselection(XX2A,nboot,yD2A)
+
+frD2A<-table(best50bootD2A); frD2A
+```
+
+## Delta BIC 
+
+```{r}
+### calcolo deltabic 
+bestD2A<- bestfitD2A$vettbic[bestfitD2A$pos.best] # Bic del modello migliore D1 
+deltabicD2A<- bestfitD2A$vettbic - bestD2A # Bic modelli - BIC modello migliore 
+
+gruppoD2A<- which(deltabicD2A<5) # differenze in BIC minori di 5  
+gruppo2D2A<-which(deltabicD2A<2) # differenze in BIC minori di 2
+
+qualisigD2A<-which(bestfitD2A$sig==1 & bestfitD2A$resig==0) # posizioni dei modelli con tutte variabili significative 
+
+qualiD2A<-intersect(gruppoD2A,qualisigD2A)# cluster modelli sig con dbic < 5  
+quali2D2A<-intersect(gruppo2D2A,qualisigD2A) # cluster modelli sig con dbic < 2 
+
+##
+qualialtriD2A<-qualiD2A[qualiD2A!=bestfitD2A$pos.best] # modelli con dbic <5 diversi da bestd1
+quali2altriD2A<-quali2D2A[quali2D2A!=bestfitD2A$pos.best] # modelli dbic < 2 diversi da bestd1
+##
+
+nomiD2A<-as.numeric(names(table(best50bootD2A))) # modelli migliori - dati boot
+
+qualiqualiD2A<-intersect(qualiD2A,nomiD2A) # insieme modelli dbic<5, nomi modelli boot
+
+quali2qualiD2A<-intersect(quali2altriD2A,nomiD2A) # insieme modelli dbic <2, diversi da bestd1
+qualiqualialtriD2A<-intersect(qualialtriD2A,nomiD2A) # insieme modelli dbic<5 diversi da bestd1, nomi modelli boot
+
+posizioniD2A<-match(qualiqualiD2A,names(frD2A)) # posizioni modelli dbic<5
+posizioni2altriD2A<-match(quali2qualiD2A,names(frD2A)) # posizioni modelli dbic<2, diversi da bestd1, nomi modelli
+posizionialtriD2A<-match(qualiqualialtriD2A,names(frD2A))# posizioni modelli dbic<5, diversi da best1, nomi modelli
+
+risultatiD2A<-matrix(as.numeric(frD2A)[posizioniD2A],ncol=1) # risultati modelli dbic<5
+risultati2altriD2A<-matrix(as.numeric(frD2A)[posizioni2altriD2A],ncol=1)#risultati modelli dbic<2, diversi da bestd1
+risultatialtriD2A<-matrix(as.numeric(frD2A)[posizionialtriD2A],ncol=1)#risultati modelli dbic<5, diversi da bestd1
+
+rownames(risultatiD2A)<-names(table(best50bootD2A))[posizioniD2A]
+rownames(risultati2altriD2A)<-names(table(best50bootD2A))[posizioni2altriD2A]
+rownames(risultatialtriD2A)<-names(table(best50bootD2A))[posizionialtriD2A]
+
+successototD2A<-sum(risultatiD2A)/nboot;
+
+successo2altriD2A<-sum(risultati2altriD2A)/nboot; # % modelli dbic <2 diversi da bestd1
+
+successoaltriD2A<-sum(risultatialtriD2A)/nboot; # % modelli dbic <5 diversi da bestd1
+
+successobestD2A<-successototD2A-successoaltriD2A;
+
+cat("totD2A","altriD2A","altri2D2A","bestD2A", "\n",successototD2A,successoaltriD2A,successo2altriD2A,successobestD2A)
+
+if(length(quali2qualiD2A)==0){
+  print("NESSUN MODELLO CON DeltaBic<5")
+}else{
+ for(i in 1:length(quali2qualiD2A)){
+  
+  cat("*************************","\n",
+      "MODELLO CON DELTABIC < 5","\n",
+      "MODELLO NUMERO:",quali2qualiD2A[i],
+      "\n","*************************",sep="")
+  
+  print(summary(bestfitD2A$modelli[[quali2qualiD2A[i]]]))
+ }
+}
+
+
+if(length(qualiqualialtriD2A)==0){
+  print("NESSUN MODELLO CON DeltaBic<2")
+}else{
+for(i in 1:length(qualiqualialtriD2A)){
+  
+ cat("*************************","\n",
+      "MODELLO CON DELTABIC < 2","\n",
+      "MODELLO NUMERO:",qualiqualialtriD2A[i],
+      "\n","*************************",sep="")
+  
+  print(summary(bestfitD2A$modelli[[qualiqualialtriD2A[i]]]))
+ }
+}
+```
+## ricampionamento 90% dati weekend 2012 (-anomali)
+
+```{r}
+nboot<-500
+
+best50boot90D2A<-modelselectionP(XX2A,nboot,yD2A,0.90)
+
+fr90D2A<-table(best50boot90D2A); fr90D2A
+```
+
+## Delta Bic
+
+```{r}
+
+qualiD290A<-intersect(qualiD2A,best50boot90D2A)# cluster modelli con dbic < 5  
+quali2D290A<-intersect(quali2D2A,best50boot90D2A) # cluster modelli con dbic < 2 
+
+##
+qualialtriD290A<-qualiD290A[qualiD290A!=bestfitD2A$pos.best] # modelli con dbic <5 diversi da bestd1
+quali2altriD290A<-quali2D290A[quali2D290A!=bestfitD2A$pos.best] # modelli dbic < 2 diversi da bestd1
+##
+
+nomiD290A<-as.numeric(names(table(best50boot90D2A))) # modelli migliori - dati boot
+
+qualiqualiD290A<-intersect(qualiD290A,nomiD290A) # insieme modelli dbic<5, nomi modelli boot
+
+quali2qualiD290A<-intersect(quali2altriD290A,nomiD290A) # insieme modelli dbic <2, diversi da bestd1
+qualiqualialtriD290A<-intersect(qualialtriD290A,nomiD290A) # insieme modelli dbic<5 diversi da bestd1, nomi modelli boot
+
+posizioniD290A<-match(qualiqualiD290A,names(fr90D2A)) # posizioni modelli dbic<5
+posizioni2altriD290A<-match(quali2qualiD290A,names(fr90D2A)) # posizioni modelli dbic<2, diversi da bestd1, nomi modelli
+posizionialtriD290A<-match(qualiqualialtriD290A,names(fr90D2A))# posizioni modelli dbic<5, diversi da best1, nomi modelli
+
+risultatiD290A<-matrix(as.numeric(fr90D2A)[posizioniD290A],ncol=1) # risultati modelli dbic<5
+risultati2altriD290A<-matrix(as.numeric(fr90D2A)[posizioni2altriD290A],ncol=1)#risultati modelli dbic<2, diversi da bestd1
+risultatialtriD290A<-matrix(as.numeric(fr90D2A)[posizionialtriD290A],ncol=1)#risultati modelli dbic<5, diversi da bestd1
+
+rownames(risultatiD290A)<-names(table(best50boot90D2A))[posizioniD290A]
+rownames(risultati2altriD290A)<-names(table(best50boot90D2A))[posizioni2altriD290A]
+rownames(risultatialtriD290A)<-names(table(best50boot90D2A))[posizionialtriD290A]
+
+successototD290A<-sum(risultatiD290A)/nboot;
+
+successo2altriD290A<-sum(risultati2altriD290A)/nboot; # % modelli dbic <2 diversi da bestd1
+
+successoaltriD290A<-sum(risultatialtriD290A)/nboot; # % modelli dbic <5 diversi da bestd1
+
+successobestD290A<-successototD290A-successoaltriD290A;
+
+cat("totD290A","altriD290A","altri2D290A","bestD290A", "\n",successototD290A,successoaltriD290A,successo2altriD290A,successobestD290A)
+
+
+if(length(qualiqualialtriD290A)==0){
+  print("NESSUN MODELLO CON DeltaBic<5")
+}else{
+for(i in 1:length(qualiqualialtriD290A)){
+  
+  cat("*************************","\n",
+      "MODELLO CON DELTABIC < 5","\n",
+      "MODELLO NUMERO:",qualiqualialtriD290A[i],
+      "\n","*************************",sep="")
+  
+  print(summary(bestfitD2A$modelli[[qualiqualialtriD290A[i]]]))
+ }
+}
+
+if(length(quali2qualiD290A)==0){
+  print("NESSUN MODELLO CON DeltaBic<2")
+}else{
+for(i in 1:length(quali2qualiD290A)){
+  
+cat("*************************","\n",
+      "MODELLO CON DELTABIC < 2","\n",
+      "MODELLO NUMERO:",quali2qualiD290A[i],
+      "\n","*************************",sep="")
+  
+  print(summary(bestfitD2A$modelli[[quali2qualiD290A[i]]]))
+ }
+}
+
+```
+
+## ricampionamento 80% dati weekend 2012 (-anomali)
+
+```{r}
+nboot<-500
+
+best50boot80D2A<-modelselectionP(XX2A,nboot,yD2A,0.80)
+
+fr80D2A<-table(best50boot80D2A); fr80D2A
+```
+
+## Delta Bic
+
+```{r}
+
+qualiD280A<-intersect(qualiD2A,best50boot80D2A)# cluster modelli con dbic < 5  
+quali2D280A<-intersect(quali2D2A,best50boot80D2A) # cluster modelli con dbic < 2 
+
+##
+qualialtriD280A<-qualiD280A[qualiD280A!=bestfitD2A$pos.best] # modelli con dbic <5 diversi da bestd1
+quali2altriD280A<-quali2D280A[quali2D280A!=bestfitD2A$pos.best] # modelli dbic < 2 diversi da bestd1
+##
+
+nomiD280A<-as.numeric(names(table(best50boot80D2A))) # modelli migliori - dati boot
+
+qualiqualiD280A<-intersect(qualiD280A,nomiD280A) # insieme modelli dbic<5, nomi modelli boot
+
+quali2qualiD280A<-intersect(quali2altriD280A,nomiD280A) # insieme modelli dbic <2, diversi da bestd1
+qualiqualialtriD280A<-intersect(qualialtriD280A,nomiD280A) # insieme modelli dbic<5 diversi da bestd1, nomi modelli boot
+
+posizioniD280A<-match(qualiqualiD280A,names(fr80D2A)) # posizioni modelli dbic<5
+posizioni2altriD280A<-match(quali2qualiD280A,names(fr80D2A)) # posizioni modelli dbic<2, diversi da bestd1, nomi modelli
+posizionialtriD280A<-match(qualiqualialtriD280A,names(fr80D2A))# posizioni modelli dbic<5, diversi da best1, nomi modelli
+
+risultatiD280A<-matrix(as.numeric(fr80D2A)[posizioniD280A],ncol=1) # risultati modelli dbic<5
+risultati2altriD280A<-matrix(as.numeric(fr80D2A)[posizioni2altriD280A],ncol=1)#risultati modelli dbic<2, diversi da bestd1
+risultatialtriD280A<-matrix(as.numeric(fr80D1A)[posizionialtriD280A],ncol=1)#risultati modelli dbic<5, diversi da bestd1
+
+rownames(risultatiD280A)<-names(table(best50boot80D2A))[posizioniD280A]
+rownames(risultati2altriD280A)<-names(table(best50boot80D2A))[posizioni2altriD280A]
+rownames(risultatialtriD280A)<-names(table(best50boot80D2A))[posizionialtriD280A]
+
+successototD280A<-sum(risultatiD280A)/nboot;
+
+successo2altriD280A<-sum(risultati2altriD280A)/nboot; # % modelli dbic <2 diversi da bestd1
+
+successoaltriD280A<-sum(risultatialtriD280A)/nboot; # % modelli dbic <5 diversi da bestd1
+
+successobestD280A<-successototD280A-successoaltriD280A;
+
+cat("totD280A","altriD280A","altri2D280A","bestD280A", "\n",successototD280A,successoaltriD280A,successo2altriD280A,successobestD280A);
+
+if(length(quali2qualiD280A)==0){
+  print("NESSUN MODELLO con DeltaBic<5")
+}else{
+for(i in 1:length(quali2qualiD280A)){
+  
+  cat("*************************","\n",
+      "MODELLO CON DELTABIC < 5","\n",
+      "MODELLO NUMERO:",quali2qualiD280A[i],
+      "\n","*************************",sep="")
+  
+  print(summary(bestfitD2A$modelli[[quali2qualiD280A[i]]]))
+ }
+}
+
+if(length(qualiqualialtriD280A)==0){
+  print("NESSUN MODELLO con DeltaBic<2")
+}else{
+for(i in 1:length(qualiqualialtriD280A)){
+  
+  cat("*************************","\n",
+      "MODELLO CON DELTABIC < 2","\n",
+      "MODELLO NUMERO:",qualiqualialtriD280A[i],
+      "\n","*************************",sep="")
+  
+  print(summary(bestfitD2A$modelli[[qualiqualialtriD280A[i]]]))
+ }
+}
+
+```
+
+
