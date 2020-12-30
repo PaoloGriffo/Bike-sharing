@@ -1,4 +1,4 @@
-# Bikesharing
+## A stability Index for an iterative procedure of selecting and validating a statistical model.
 
 [MS Thesis in Statistical Sciences for decision - Federico II University of Naples project files.]
 ****************************************************************************************************************
