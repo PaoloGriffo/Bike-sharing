@@ -22,8 +22,8 @@ A best model is selected with the Bestsubset selection (using BIC criteria) and 
 
 The Stability Index is computed on different partitions of the original data separately, considering both anomalous points and non, as follow: 
 
-#### 1) Complete sample (2011-2012 records) 
-#### 1.1) Complete sample (2011-2012 records) without anomalous (approx. 1%)
+##### 1) Complete sample (2011-2012 records) 
+##### 1.1) Complete sample (2011-2012 records) without anomalous (approx. 1%)
 
 - 2) First Half of sample (2011 records)  
 - 2.1) First Half of sample (2011 records) without anomalous (approx. 1%)
