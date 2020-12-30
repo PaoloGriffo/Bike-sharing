@@ -5,9 +5,8 @@
 
 The folder is structured as follow:
 
-- The case study dataset day.csv (available also on https://archive.ics.uci.edu/ml/datasets/bike+sharing+dataset) 
+- [The case study dataset day.csv](https://archive.ics.uci.edu/ml/datasets/bike+sharing+dataset) 
 - Markdown Project code 'Bestfit_bikesharing.rmd' 
-- HTML Project output 'Bestfit_bikesharing.html'
 - Thesis Brochure 'MS_Thesis.pdf'
 
 ### Project scope and approach
