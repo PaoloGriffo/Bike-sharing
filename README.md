@@ -20,13 +20,13 @@ A best model is selected with the Bestsubset selection (using BIC criteria) and 
 Index derivation scheme - 
 The Stability Index is computed on different partitions of the original data separately, considering both anomalous points and non, as follow: 
 
-- 1) Complete sample (2011-2012 records) 
+- .1) Complete sample (2011-2012 records) 
 - 1.1) Complete sample (2011-2012 records) without anomalous (approx. 1%)
 
-- 2) First Half of sample (2011 records)  
+- .2) First Half of sample (2011 records)  
 - 2.1) First Half of sample (2011 records) without anomalous (approx. 1%)
 
-- 3) Second Half of sample (2012 records)  
+- .3) Second Half of sample (2012 records)  
 - 3.1) Second Half of sample (2012 records) without anomalous (approx. 1%)
 
 For these samples, the estimation, selection and validation steps of the best model are iterated B times, in turn resampling the B times with two different percentage, that is: 
