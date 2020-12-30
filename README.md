@@ -24,10 +24,10 @@ The Stability Index is computed on different partitions of the original data sep
 
 ##### 1) Complete sample (2011-2012 records) 
 ##### 1.1) Complete sample (2011-2012 records) without anomalous (approx. 1%)
-##### 2) First Half of sample (2011 records)  
-##### 2.1) First Half of sample (2011 records) without anomalous (approx. 1%)
-##### 3) Second Half of sample (2012 records)  
-##### 3.1) Second Half of sample (2012 records) without anomalous (approx. 1%)
+##### 2) First half of sample (2011 records)  
+##### 2.1) First half of sample (2011 records) without anomalous (approx. 1%)
+##### 3) Second half of sample (2012 records)  
+##### 3.1) Second half of sample (2012 records) without anomalous (approx. 1%)
 
 For these samples, the estimation, selection and validation steps of the best model are iterated B times, in turn resampling the B times with two different percentage, that is: 
 
