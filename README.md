@@ -1,9 +1,40 @@
 # Bikesharing
-MS Thesis work on selection and model validation with the delta Bic. 
 
-The aim of the thesis is to implement an automatic procedure to select and validate a statistical model through the use of the delta Bic. 
-The procedure was applied to the case of multiple linear regression, analyzing the number of random accesses to the bike sharing service in the city of Washington D.C., during the weekends in the years 2011 and 2012. The stability of the model was assessed in three distinct cases; the first time the sample of observations of the 2011-2012 weekends is considered and in the second and third time the sub-samples are considered separately. In each sub-test, 90% and 80% of the original and non-anomalous data are resampled respectively.
+[MS Thesis in Statistical Sciences for decision - Federico II University of Naples project files.]
+****************************************************************************************************************
 
-Data source: 
-https://archive.ics.uci.edu/ml/datasets/bike+sharing+dataset
+The folder is structured as follow:
+
+- The case study dataset day.csv (available also on https://archive.ics.uci.edu/ml/datasets/bike+sharing+dataset) 
+- Markdown Project code 'Bestfit_bikesharing.rmd' 
+- HTML Project output 'Bestfit_bikesharing.html'
+- Thesis Brochure 'MS_Thesis.pdf'
+
+Project scope and approach - 
+The aim of the thesis is to develop an automatic statistical procedure able to select and validate a model introducing a Stability Index as decision-making rationale. 
+
+A first application of general procedure is held for a Linear Regression case, facing the number of random accesses to a bike sharing service in Washington D.C. during the weekends in the years 2011 and 2012 as the varying weather conditions. 
+
+A best model is selected with the Bestsubset selection (using BIC criteria) and a group of similar in best performing model is choosen using the Delta BIC criterion.
+
+Index derivation scheme - 
+The Stability Index is computed on different partitions of the original data separately, considering both anomalous points and non, as follow: 
+
+1) Complete sample (2011-2012 records) 
+1.1) Complete sample (2011-2012 records) without anomalous (approx. 1%)
+
+2) First Half of sample (2011 records)  
+2.1) First Half of sample (2011 records) without anomalous (approx. 1%)
+
+3) Second Half of sample (2012 records)  
+3.1) Second Half of sample (2012 records) without anomalous (approx. 1%)
+
+For these samples, the estimation, selection and validation steps of the best model are iterated B times, in turn resampling the B times with two different percentage, that is: 
+
+a) 90% 
+b) 80%
+
+Finally, for the sake of clarity, a comparison between all the combinations stress the insights on the Stability Index.   
+
+
 
