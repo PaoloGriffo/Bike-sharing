@@ -10,7 +10,7 @@ The folder is structured as follow:
 - HTML Project output 'Bestfit_bikesharing.html'
 - Thesis Brochure 'MS_Thesis.pdf'
 
-[Project scope and approach]
+### [Project scope and approach]
 
 The aim of the thesis is to develop an automatic statistical procedure able to select and validate a model introducing a Stability Index as decision-making rationale. 
 
@@ -18,12 +18,12 @@ A first application of general procedure is held for a Linear Regression case, f
 
 A best model is selected with the Bestsubset selection (using BIC criteria) and a group of similar in best performing model is choosen using the Delta BIC criterion.
 
-[Index derivation scheme]
+### [Index derivation scheme]
 
 The Stability Index is computed on different partitions of the original data separately, considering both anomalous points and non, as follow: 
 
-### 1) Complete sample (2011-2012 records) 
-### 1.1) Complete sample (2011-2012 records) without anomalous (approx. 1%)
+#### 1) Complete sample (2011-2012 records) 
+#### 1.1) Complete sample (2011-2012 records) without anomalous (approx. 1%)
 
 - 2) First Half of sample (2011 records)  
 - 2.1) First Half of sample (2011 records) without anomalous (approx. 1%)
