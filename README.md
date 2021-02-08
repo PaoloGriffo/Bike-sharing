@@ -1,9 +1,9 @@
-## A stability Index for an iterative procedure of selecting and validating a statistical model.
+## A Stability Index for statistical models. An iterative procedure of selection and validation through the Delta BIC.
 
 [MS Thesis in Statistical Sciences for decision - Federico II University of Naples project files.]
 ****************************************************************************************************************
 
-The folder is structured as follow:
+This folder contains:
 
 - [Bike sharing dataset](https://archive.ics.uci.edu/ml/datasets/bike+sharing+dataset) 
 - Markdown Project code 'Bestfit_bikesharing.rmd' 
@@ -11,15 +11,15 @@ The folder is structured as follow:
 
 ### Project scope and approach
 
-The aim of the thesis is to develop an automatic statistical procedure able to select and validate a model introducing a Stability Index as decision-making rationale. 
+The aim of the thesis is to develop a generalized and automatic procedure of selection and validation of a statistical model using the BIC criterion to derive a Stabiliy Index.
 
-A first application of general procedure is held for a Linear Regression case, facing the number of random accesses to a bike sharing service in Washington D.C. during the weekends in the years 2011 and 2012 as the varying weather conditions. 
+The Stability Index proposed in the thesis is tested in the case of a Linear Regression problem.  The UCI bike sharing dataset take into account of the number of random accesses to the bike sharing service in Washington D.C. during the weekends in the years 2011 and 2012 and the varying weather conditions. 
 
 A best model is selected with the Bestsubset selection (using BIC criteria) and a group of similar in best performing model is choosen using the Delta BIC criterion.
 
 ### Index derivation scheme
 
-The Stability Index is computed on different partitions of the original data separately, considering both anomalous points and non, as follow: 
+The Stability Index is computed on different partitions of the original data separately, considering both anomalous wheather conditions days and usuals ones, as follow: 
 
 ##### 1) Complete sample (2011-2012 records) 
 ##### 1.1) Complete sample (2011-2012 records) without anomalous (approx. 1%)
