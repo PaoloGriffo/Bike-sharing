@@ -13,13 +13,13 @@ This folder contains:
 
 The aim of the thesis is to develop a generalized and automatic procedure of selection and validation of a statistical model using the BIC criterion to derive a Stabiliy Index.
 
-The Stability Index proposed in the thesis is tested in the case of the Linear Regression problem.  The UCI bike sharing dataset take into account the number of random accesses to the bike sharing service in Washington D.C. during the weekends in the years 2011 and 2012 and the varying weather conditions. 
+The Stability Index proposed in the thesis is tested in the case of the Linear Regression. The UCI bike sharing dataset take into account the number of random accesses to the bike sharing service in Washington D.C. during the weekends in the years 2011 and 2012 and the varying weather conditions. 
 
-A best model is selected with the Bestsubset selection (using BIC criteria) and a group of similar in best performing model is choosen using the Delta BIC criterion.
+A best model is selected with the Bestsubset selection from a group of similar in best performing models choosen on the Delta BIC ranks.
 
 ### Index derivation scheme
 
-The Stability Index is computed on different partitions of the original data separately, considering both anomalous wheather conditions days and usuals ones, as follow: 
+The Stability Index is separately computed on different partitions of the original data, considering both anomalous wheather conditions days and usuals ones, as follow: 
 
 ##### 1) Complete sample (2011-2012 records) 
 ##### 1.1) Complete sample (2011-2012 records) without anomalous (approx. 1%)
@@ -33,7 +33,7 @@ For these samples, the estimation, selection and validation steps of the best mo
 ##### a) 90% 
 ##### b) 80%
 
-Finally, for the sake of clarity, a comparison between all the combinations stress the insights on the Stability Index.   
+Finally, for the sake of clarity, a comparison between all the combinations shows the insights on the Stability Index.   
 
 
 
